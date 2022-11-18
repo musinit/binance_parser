@@ -1,11 +1,7 @@
 # Binance parser
 
 ### Getting started
-1. Start redis environment
-```azure
-    make run_env
-```
-2. Start the service
+1. Start the service
 ```azure
     make run
 ```
