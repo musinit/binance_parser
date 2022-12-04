@@ -4,7 +4,6 @@ import (
 	"binance_parser/config"
 	"binance_parser/domain"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -79,12 +78,4 @@ func (engine *Txengine) startBlockSync() {
 			break
 		}
 	}
-}
-
-func (engine *Txengine) removeAddressFromCollection(address string) error {
-	if res := engine.parserUsecase.Unsubscribe(address); !res {
-		engine.logger.Writer().Write([]byte("can't remove bad address from collection"))
-		return errors.New("can't remove bad address from collection")
-	}
-	return nil
 }
