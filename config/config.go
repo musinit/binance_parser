@@ -1,14 +1,14 @@
 package config
 
-type CloudfareETHCnf struct {
+type CloudfareCnf struct {
 	API string
 }
 
 type Config struct {
-	Port               string
-	CloudfareEHTConfig CloudfareETHCnf
-	BlockscautAPI      string
-	RedisConfig        RedisCnf
+	Port            string
+	CloudfareConfig CloudfareCnf
+	CloudflareAPI   string
+	RedisConfig     RedisCnf
 }
 
 type RedisCnf struct {

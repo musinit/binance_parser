@@ -4,35 +4,42 @@ import (
 	"binance_parser/config"
 	"binance_parser/domain"
 	"binance_parser/utils"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/mitchellh/mapstructure"
 	"log"
 	"net/http"
+	"strconv"
 )
 
-type MemParserRepository struct {
-	cnf      *config.Config
-	logger   *log.Logger
-	redisCli redis.UniversalClient
+// let's start by default not from the beginning of blockchain,
+// but from some middle point
+var startBlockNumber = int32(16110556)
 
-	transactions      map[string][]domain.Transaction
-	addrsOffsets      map[string]int32
+type MemParserRepository struct {
+	cnf    *config.Config
+	logger *log.Logger
+
+	// transactions per block
+	transactions map[string][]domain.Transaction
+	// transactions per user address
+	userTransactions  map[string][]*domain.Transaction
+	userAddressTxHash map[string]struct{}
 	latestBlockNumber int32
 }
 
 func NewMemParserRepository(
 	config *config.Config,
-	logger *log.Logger,
-	redisCli redis.UniversalClient) domain.ParserRepository {
+	logger *log.Logger) domain.ParserRepository {
 	return &MemParserRepository{
-		cnf:          config,
-		logger:       logger,
-		redisCli:     redisCli,
-		transactions: map[string][]domain.Transaction{},
-		addrsOffsets: map[string]int32{},
+		cnf:               config,
+		logger:            logger,
+		transactions:      map[string][]domain.Transaction{},
+		userTransactions:  map[string][]*domain.Transaction{},
+		userAddressTxHash: map[string]struct{}{},
+		latestBlockNumber: startBlockNumber,
 	}
 }
 
@@ -41,118 +48,62 @@ func (p *MemParserRepository) GetCurrentBlock() int32 {
 }
 
 func (p *MemParserRepository) Subscribe(address string) bool {
-	if _, ok := p.transactions[address]; ok {
+	if _, ok := p.userTransactions[address]; ok {
 		return false
 	}
-	p.transactions[address] = []domain.Transaction{}
-	// Start tracking for the new ones from the latest block number
-	p.addrsOffsets[address] = p.latestBlockNumber
+	p.userTransactions[address] = []*domain.Transaction{}
 	return true
 }
 
-func (p *MemParserRepository) GetTransactions(address string) []domain.Transaction {
-	if _, ok := p.transactions[address]; !ok {
-		p.logger.Writer().Write([]byte("no transactions for such address"))
-		return []domain.Transaction{}
+func (p *MemParserRepository) GetTransactions(address string) []*domain.Transaction {
+	if _, ok := p.userTransactions[address]; !ok {
+		p.logger.Writer().Write([]byte("no subscription for this address"))
+		return []*domain.Transaction{}
 	} else {
-		return p.transactions[address]
+		return p.userTransactions[address]
 	}
 }
 
-func (p *MemParserRepository) GetAllAddresses() []string {
-	result := make([]string, 0)
-	for key, _ := range p.transactions {
-		result = append(result, key)
+func (p *MemParserRepository) GetAllAddresses() map[string]struct{} {
+	var result = map[string]struct{}{}
+	for key, _ := range p.userTransactions {
+		result[key] = struct{}{}
 	}
 	return result
-	//ctx := context.Background()
-	//iter := p.redisCli.Scan(ctx, 0, fmt.Sprintf("%s*", p.cnf.RedisConfig.Prefix), 0).Iterator()
-	//result := make([]string, 0)
-	//for iter.Next(ctx) {
-	//	result = append(result, iter.Val())
-	//}
-	//if err := iter.Err(); err != nil {
-	//	panic(err)
-	//}
-	//
-	//return result
-}
-
-func (p *MemParserRepository) GetAddressOffset(address string) int32 {
-	if _, ok := p.transactions[address]; !ok {
-		p.logger.Writer().Write([]byte("no offset for such address"))
-		return 0
-	} else {
-		return p.addrsOffsets[address]
-	}
 }
 
 func (p *MemParserRepository) Unsubscribe(address string) bool {
-	if _, ok := p.transactions[address]; !ok {
+	if _, ok := p.userTransactions[address]; !ok {
 		p.logger.Writer().Write([]byte("no subscription for such address"))
 		return false
 	} else {
 		// TODO transaction here
-		delete(p.transactions, address)
-		delete(p.addrsOffsets, address)
+		delete(p.userTransactions, address)
 		return true
 	}
 }
 
-// The most buggy part, not tested
-func (p *MemParserRepository) GetTransactionsByAddress(address string, startblock int32) ([]domain.Transaction, error) {
-	ctx := context.Background()
-	url := fmt.Sprintf("%s/eth/mainnet/api?module=account&action=txlist&address=%s&start_block=%d&sort=desc&offset=100&page=0",
-		p.cnf.BlockscautAPI, address, startblock)
-	req, err := http.NewRequest("GET", url, nil)
-	req = req.WithContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		fmt.Printf("BlockscautUsecase err: %s", err.Error())
-		return nil, err
-	}
-	var res domain.EtherscansResponse
-	if err = utils.ReadRequestBody(resp.Body, &res); err != nil {
-		return nil, err
-	}
-	if res.Status != "1" {
-		if res.Message == "No transactions found" {
-			return nil, nil
-		} else {
-			p.logger.Writer().Write([]byte("BlockscautUsecase bad response, err: %s"))
-			return nil, fmt.Errorf("BlockscautUsecase bad response")
-		}
-	}
-	var result []domain.BlockscautTxResponse
-	if err := mapstructure.Decode(res.Result, &result); err != nil {
-		fmt.Printf("BlockscautUsecase decode err: %s", err.Error())
-		return nil, err
-	}
-	transactions := domain.ToBlockskautTransactionDTOs(result, address)
-	return transactions, nil
-}
-
-func (p *MemParserRepository) AddTransactions(address string, txs []domain.Transaction) error {
-	if _, ok := p.transactions[address]; !ok {
+func (p *MemParserRepository) CacheTransaction(address string, tx *domain.Transaction) error {
+	if _, ok := p.userTransactions[address]; !ok {
 		p.logger.Writer().Write([]byte("no subscription for such address"))
 		return errors.New("no such address with subscription")
 	} else {
-		p.transactions[address] = append(p.transactions[address], txs...)
+		p.userTransactions[address] = append(p.userTransactions[address], tx)
 		return nil
 	}
 }
 
-func (p *MemParserRepository) UpdateOffset(address string, offset int32) error {
-	if _, ok := p.addrsOffsets[address]; !ok {
-		p.logger.Writer().Write([]byte("no offset for such address"))
-		return errors.New("no such address with offset")
-	} else {
-		p.addrsOffsets[address] = offset
-		return nil
-	}
+func (p *MemParserRepository) AddTransactionsInBlock(blockHash string, txs []domain.Transaction) {
+	p.transactions[blockHash] = append(p.transactions[blockHash], txs...)
+}
+
+func (p *MemParserRepository) AddUserAddressTxHash(address string, txHash string) {
+	p.userAddressTxHash[domain.TxcacheKey(address, txHash)] = struct{}{}
+}
+
+func (p *MemParserRepository) IsUserAddressInTxhash(address string, txHash string) bool {
+	_, ok := p.userAddressTxHash[domain.TxcacheKey(address, txHash)]
+	return ok
 }
 
 func (p *MemParserRepository) GetLatestBlockNumber() int32 {
@@ -163,6 +114,72 @@ func (p *MemParserRepository) UpdateLatestBlockNumber(val int32) {
 	p.latestBlockNumber = val
 }
 
+func (p *MemParserRepository) GetETHLatestBlockNumber() (int32, error) {
+	ctx := context.Background()
+	body := domain.CloudflareRequest{
+		JSONRPS: "2.0",
+		Method:  "eth_blockNumber",
+		Params:  nil,
+		ID:      1,
+	}
+	bJSON, err := json.Marshal(body)
+	if err != nil {
+		return -1, err
+	}
+	req, err := http.NewRequest("POST", p.cnf.CloudflareAPI, bytes.NewBuffer(bJSON))
+	req = req.WithContext(ctx)
+	if err != nil {
+		return -1, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Printf("Cloudflare err: %s", err.Error())
+		return -1, err
+	}
+	var res domain.CloudflareRPSStringResponse
+	if err = utils.ReadRequestBody(resp.Body, &res); err != nil {
+		return -1, err
+	}
+	result, err := strconv.ParseInt(res.Result[2:], 16, 32)
+	if err != nil {
+		return -1, err
+	}
+	return int32(result), nil
+}
+
+func (p *MemParserRepository) GetETHBlockByNumber(blockNumber int32) (*domain.Block, error) {
+	blockNumberHex := fmt.Sprintf("0x%x", blockNumber)
+	ctx := context.Background()
+	body := domain.CloudflareRequest{
+		JSONRPS: "2.0",
+		Method:  "eth_getBlockByNumber",
+		Params: []interface{}{
+			blockNumberHex,
+			true,
+		},
+		ID: 1,
+	}
+	bJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("POST", p.cnf.CloudflareAPI, bytes.NewBuffer(bJSON))
+	req = req.WithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Printf("Cloudflare err: %s", err.Error())
+		return nil, err
+	}
+	var res domain.CloudflareRPSTransactionsResponse
+	if err = utils.ReadRequestBody(resp.Body, &res); err != nil {
+		return nil, err
+	}
+
+	return res.Result.ToBlockDTO()
+}
+
 func (p *MemParserRepository) Close() {
-	p.redisCli.Close()
 }

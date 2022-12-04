@@ -17,6 +17,8 @@ type Txengine struct {
 	stopCh chan bool
 
 	parserUsecase domain.ParserUsecase
+
+	newTransactions chan []domain.Transaction
 }
 
 func NewTxengine(ctx context.Context,
@@ -24,55 +26,56 @@ func NewTxengine(ctx context.Context,
 	cnf *config.Config,
 	parserUsecase domain.ParserUsecase) *Txengine {
 	return &Txengine{
-		ctx:           ctx,
-		logger:        logger,
-		cnf:           cnf,
-		stopCh:        make(chan bool, 1),
-		parserUsecase: parserUsecase,
+		ctx:             ctx,
+		logger:          logger,
+		cnf:             cnf,
+		stopCh:          make(chan bool, 1),
+		parserUsecase:   parserUsecase,
+		newTransactions: make(chan []domain.Transaction),
 	}
 }
 
 func (engine *Txengine) Run() {
-	engine.start()
+	go engine.startTxSync()
+	engine.startBlockSync()
 }
 
-func (engine *Txengine) start() {
+// startBlockSync for copy the blocks and transactions from Ethereum
+func (engine *Txengine) startBlockSync() {
 	engine.logger.Writer().Write([]byte("txengine started\n"))
 	for {
 		select {
 		case <-time.After(5 * time.Second):
-			addresses := engine.parserUsecase.GetAllAddresses()
-			for _, address := range addresses {
-				fmt.Printf("processing %s address...\n", address)
-				startIdx := engine.parserUsecase.GetAddressOffset(address)
-				fmt.Printf("offset: %d\n", startIdx)
-				// TODO startIdx+1 rewrite to check by startIdx + transactionIdx inside block
-				txs, err := engine.parserUsecase.GetTransactionsByAddress(address, startIdx+1)
-				fmt.Printf("transactions:: %+v\n", txs)
-				if err != nil {
-					engine.removeAddressFromCollection(address)
-				}
-				if len(txs) > 0 {
-					// TODO transaction here
-					if err := engine.parserUsecase.AddTransactions(address, txs); err != nil {
-						// TODO retry here
-						engine.removeAddressFromCollection(address)
-					}
-					if err := engine.parserUsecase.UpdateOffset(address, txs[0].BlockNumber); err != nil {
-						engine.removeAddressFromCollection(address)
-					}
-					latestBlockNumber := engine.parserUsecase.GetLatestBlockNumber()
-					actualLatestBlockNumber := txs[0].BlockNumber
-					if actualLatestBlockNumber > latestBlockNumber {
-						engine.parserUsecase.UpdateLatestBlockNumber(actualLatestBlockNumber)
-					}
-					fmt.Printf("%s successfully processed\n", address)
-				} else {
-					fmt.Printf("%s no transactions for adding\n", address)
-				}
-
+			ethLatestBlockNumber, err := engine.parserUsecase.GetETHLatestBlockNumber()
+			if err != nil {
+				fmt.Errorf("txengine: request latest block number error: %s. Retrying in 5 seconds...\n", err.Error())
+				time.Sleep(5 * time.Second)
+				continue
 			}
-			fmt.Println("processing")
+			// TODO fix
+			// start check with the previous block, as there can be transactions since last check.
+			// I assume that there can't be 2 or more filled blocks in less than 5 seconds
+			// massive repeat caching tries because of this
+			currBlockNumber := engine.parserUsecase.GetLatestBlockNumber() - 1
+			fmt.Printf("latest eth block number: %d, latest processed block number: %d. Processing %d blocks...\n", ethLatestBlockNumber, currBlockNumber, ethLatestBlockNumber-currBlockNumber)
+			// for each unprocessed block number
+			for blockNumber := currBlockNumber; blockNumber <= ethLatestBlockNumber; blockNumber++ {
+				block, err := engine.parserUsecase.GetETHBlockByNumber(blockNumber)
+				if err != nil {
+					fmt.Errorf("txengine: request block by number %d error: %s. Retrying in 5 seconds...\n", blockNumber, err.Error())
+					time.Sleep(5 * time.Second)
+					break
+				}
+				fmt.Printf("hash: %+v\ngasUsed: %d\ngasLimit: %d\n", block.Hash, block.GasUsed, block.GasLimit)
+				if len(block.Transactions) > 0 {
+					// TODO add only transactions for subscribed addresses
+					engine.parserUsecase.AddTransactionsInBlock(block.Hash, block.Transactions)
+					engine.newTransactions <- block.Transactions
+				} else {
+					fmt.Printf("no transactions in block hash: %s. Continue...", block.Hash)
+				}
+			}
+			engine.parserUsecase.UpdateLatestBlockNumber(ethLatestBlockNumber)
 		case <-engine.stopCh:
 			break
 		}
