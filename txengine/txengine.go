@@ -48,8 +48,7 @@ func (engine *Txengine) startBlockSync() {
 		case <-time.After(5 * time.Second):
 			ethLatestBlockNumber, err := engine.parserUsecase.GetETHLatestBlockNumber()
 			if err != nil {
-				fmt.Errorf("txengine: request latest block number error: %s. Retrying in 5 seconds...\n", err.Error())
-				time.Sleep(5 * time.Second)
+				fmt.Errorf("txengine: request latest block number error: %s. Retrying...\n", err.Error())
 				continue
 			}
 			// TODO fix
@@ -62,9 +61,9 @@ func (engine *Txengine) startBlockSync() {
 			for blockNumber := currBlockNumber; blockNumber <= ethLatestBlockNumber; blockNumber++ {
 				block, err := engine.parserUsecase.GetETHBlockByNumber(blockNumber)
 				if err != nil {
-					fmt.Errorf("txengine: request block by number %d error: %s. Retrying in 5 seconds...\n", blockNumber, err.Error())
-					time.Sleep(5 * time.Second)
-					break
+					// TODO skip-retry block processing policy
+					fmt.Errorf("txengine: request block by number %d error: %s. Skipping.\n", blockNumber, err.Error())
+					continue
 				}
 				fmt.Printf("hash: %+v\ngasUsed: %d\ngasLimit: %d\n", block.Hash, block.GasUsed, block.GasLimit)
 				if len(block.Transactions) > 0 {
