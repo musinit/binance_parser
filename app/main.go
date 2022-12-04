@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-chi/chi"
-	"github.com/go-redis/redis/v8"
 	"log"
 	"net/http"
 	"time"
@@ -22,34 +21,23 @@ func main() {
 	// TODO read from config file
 	cnf := config.Config{
 		Port: "9090",
-		CloudfareEHTConfig: config.CloudfareETHCnf{
+		CloudfareConfig: config.CloudfareCnf{
 			API: "https://cloudflare-eth.com",
 		},
 		RedisConfig: config.RedisCnf{
 			Addr:   "localhost:6379",
 			Prefix: "bp_",
 		},
-		BlockscautAPI: "https://blockscout.com",
+		CloudflareAPI: "https://cloudflare-eth.com",
 	}
 	r := utils.NewRouter()
 	r.UseMiddlewares(
 		utils.TraceID,
 	)
 	logger := log.New(log.Writer(), "binance_parser", 0)
-	redisClient := redis.NewUniversalClient(
-		&redis.UniversalOptions{
-			Addrs:    []string{cnf.RedisConfig.Addr},
-			DB:       0,
-			ReadOnly: false,
-		},
-	)
 	ctx := context.Background()
 
-	// TODO check status, if err - stop
-	status := redisClient.Ping(ctx)
-	logger.Writer().Write([]byte(fmt.Sprintf("redis status: %s\n", status)))
-
-	parserRepository := parserRepository.NewMemParserRepository(&cnf, logger, redisClient)
+	parserRepository := parserRepository.NewMemParserRepository(&cnf, logger)
 	defer parserRepository.Close()
 
 	SetDomain(&cnf, r, parserRepository, logger)

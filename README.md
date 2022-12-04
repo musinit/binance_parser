@@ -8,12 +8,14 @@
 3. Check how it works
 
 ```azure
-GET localhost:9090/parser/blocks/current
-GET localhost:9090/parser/transactions
-POST localhost:9090/parser/subscription
+POST localhost:9090/parser/subscription (subscribe)
+GET localhost:9090/parser/blocks/current (get latest block number)
+GET localhost:9090/parser/transactions (check transactions)
+
 ```
 
 Limits:
- - Check address once per ~5 seconds
- - Checks <= 100 latest transaction in ~5 seconds
-
+ - Check new blocks once in 5 sec
+ - Updating and caching user transactions with the same rate
+ - Start from 16110556 block number (can be changed in repository layer)
+ - After subscribing start transaction caching with the latest block num
