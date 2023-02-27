@@ -2,7 +2,7 @@
 
 ### Getting started
 1. Start the service
-```azure
+```
     make run
 ```
 3. Check how it works
