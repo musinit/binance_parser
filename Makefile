@@ -11,3 +11,8 @@ run_env:
 
 stop_env:
 	docker-compose -f docker-compose-env.yml down
+
+
+build_hub:
+	docker build --platform linux/amd64 . -t musinit/bparser-b:latest
+	docker push musinit/bparser-b:latest

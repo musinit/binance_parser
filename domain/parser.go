@@ -16,6 +16,7 @@ type ParserUsecase interface {
 	GetTransactions(address string) []*Transaction
 
 	GetAllAddresses() map[string]struct{}
+	GetTxNum() int
 	Unsubscribe(address string) bool
 	UpdateLatestBlockNumber(val int32)
 	GetLatestBlockNumber() int32
@@ -34,6 +35,7 @@ type ParserRepository interface {
 	GetAllAddresses() map[string]struct{}
 	UpdateLatestBlockNumber(val int32)
 	GetLatestBlockNumber() int32
+	GetTxNum() int
 
 	GetETHLatestBlockNumber() (int32, error)
 	GetETHBlockByNumber(blockNumber int32) (*Block, error)
@@ -45,15 +47,20 @@ type ParserRepository interface {
 }
 
 type Transaction struct {
-	ID               *uuid.UUID `json:"id"`
-	BlockNumber      string     `json:"blockNumber"`
-	TransactionIndex string     `json:"transactionIndex"`
-	TimeStamp        int64      `json:"timeStamp"`
-	Hash             string     `json:"hash"`
-	BlockHash        string     `json:"blockHash"`
-	From             string     `json:"from"`
-	To               string     `json:"to"`
-	Value            string     `json:"value"`
+	ID                   *uuid.UUID `json:"-"`
+	BlockNumber          string     `json:"blockNumber"`
+	TransactionIndex     string     `json:"transactionIndex"`
+	TimeStamp            int64      `json:"timeStamp"`
+	Hash                 string     `json:"hash"`
+	BlockHash            string     `json:"blockHash"`
+	From                 string     `json:"from"`
+	To                   string     `json:"to"`
+	Value                string     `json:"value"`
+	GasLimit             string     `json:"gasLimit"`
+	GasUsed              string     `json:"gasUsed"`
+	MaxFeePerGas         string     `json:"maxFeePerGas"`
+	MaxPriorityFeePerGas string     `json:"maxPriorityFeePerGas"`
+	Nonce                string     `json:"nonce"`
 }
 
 type Block struct {
@@ -71,4 +78,9 @@ type AddressRequest struct {
 
 var TxcacheKey = func(address, txhash string) string {
 	return fmt.Sprintf("%s_%s", address, txhash)
+}
+
+type ParserOverview struct {
+	LatestBlockNumber int32 `json:"latestBlockNumber"`
+	TxNum             int   `json:"txNum"`
 }

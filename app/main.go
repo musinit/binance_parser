@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	parserHTTPHandler "binance_parser/parser/delivery"
@@ -42,15 +43,29 @@ func main() {
 
 	SetDomain(&cnf, r, parserRepository, logger)
 
-	logger.Writer().Write([]byte(fmt.Sprintf("starting service on port: %s\n", cnf.Port)))
-	s := &http.Server{
-		Addr:           fmt.Sprint(fmt.Sprintf(":%s", cnf.Port)),
-		Handler:        chi.ServerBaseContext(ctx, r.Mux),
-		ReadTimeout:    5 * time.Second,
-		WriteTimeout:   5 * time.Second,
-		MaxHeaderBytes: 1 << 20,
+	env := os.Getenv("ENV")
+	if env == "prod" {
+		s := &http.Server{
+			Addr:           fmt.Sprint(":https"),
+			Handler:        chi.ServerBaseContext(ctx, r.Mux),
+			ReadTimeout:    5 * time.Second,
+			WriteTimeout:   5 * time.Second,
+			MaxHeaderBytes: 1 << 20,
+		}
+		logger.Writer().Write([]byte(fmt.Sprintf("starting service on https\n")))
+		log.Fatal(s.ListenAndServeTLS(fmt.Sprintf("%sverdandi.uno.pem", "/app/"), fmt.Sprintf("%sverdandi.uno.key", "/app/")))
+	} else {
+		logger.Writer().Write([]byte(fmt.Sprintf("starting service on port: %s\n", cnf.Port)))
+		s := &http.Server{
+			Addr:           fmt.Sprint(fmt.Sprintf(":%s", cnf.Port)),
+			Handler:        chi.ServerBaseContext(ctx, r.Mux),
+			ReadTimeout:    5 * time.Second,
+			WriteTimeout:   5 * time.Second,
+			MaxHeaderBytes: 1 << 20,
+		}
+		log.Fatal(s.ListenAndServe())
 	}
-	log.Fatal(s.ListenAndServe())
+
 }
 
 func SetDomain(

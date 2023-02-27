@@ -44,7 +44,7 @@ func (engine *Txengine) startBlockSync() {
 	engine.logger.Writer().Write([]byte("txengine started\n"))
 	for {
 		select {
-		case <-time.After(5 * time.Second):
+		case <-time.After(500 * time.Millisecond):
 			ethLatestBlockNumber, err := engine.parserUsecase.GetETHLatestBlockNumber()
 			if err != nil {
 				fmt.Errorf("txengine: request latest block number error: %s. Retrying...\n", err.Error())

@@ -65,6 +65,10 @@ func (p *ParserUsecase) GetLatestBlockNumber() int32 {
 	return p.parserRepository.GetLatestBlockNumber()
 }
 
+func (p *ParserUsecase) GetTxNum() int {
+	return p.parserRepository.GetTxNum()
+}
+
 func (p *ParserUsecase) GetETHLatestBlockNumber() (int32, error) {
 	return p.parserRepository.GetETHLatestBlockNumber()
 }

@@ -16,7 +16,7 @@ import (
 
 // let's start by default not from the beginning of blockchain,
 // but from some middle point
-var startBlockNumber = int32(16110556)
+var startBlockNumber = int32(16717904)
 
 type MemParserRepository struct {
 	cnf    *config.Config
@@ -25,7 +25,8 @@ type MemParserRepository struct {
 	// transactions per block
 	transactions map[string][]domain.Transaction
 	// transactions per user address
-	userTransactions  map[string][]*domain.Transaction
+	userTransactions map[string][]*domain.Transaction
+	// to remember user tx hashed to avoid repeated txs
 	userAddressTxHash map[string]struct{}
 	latestBlockNumber int32
 }
@@ -33,11 +34,16 @@ type MemParserRepository struct {
 func NewMemParserRepository(
 	config *config.Config,
 	logger *log.Logger) domain.ParserRepository {
+	userTransactions := map[string][]*domain.Transaction{
+		"0x77223f67d845e3cbcd9cc19287e24e71f7228888": {},
+		"0x0809616c35784db5f758e0338e9d9b25a2fd1932": {},
+		"0x76f36d497b51e48a288f03b4c1d7461e92247d5e": {},
+	}
 	return &MemParserRepository{
 		cnf:               config,
 		logger:            logger,
 		transactions:      map[string][]domain.Transaction{},
-		userTransactions:  map[string][]*domain.Transaction{},
+		userTransactions:  userTransactions,
 		userAddressTxHash: map[string]struct{}{},
 		latestBlockNumber: startBlockNumber,
 	}
@@ -66,10 +72,18 @@ func (p *MemParserRepository) GetTransactions(address string) []*domain.Transact
 
 func (p *MemParserRepository) GetAllAddresses() map[string]struct{} {
 	var result = map[string]struct{}{}
-	for key, _ := range p.userTransactions {
+	for key := range p.userTransactions {
 		result[key] = struct{}{}
 	}
 	return result
+}
+
+func (p *MemParserRepository) GetTxNum() int {
+	totallen := 0
+	for _, val := range p.transactions {
+		totallen += len(val)
+	}
+	return totallen
 }
 
 func (p *MemParserRepository) Unsubscribe(address string) bool {

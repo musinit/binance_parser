@@ -15,7 +15,7 @@ GET localhost:9090/parser/transactions (check transactions)
 ```
 
 Limits:
- - Check new blocks once in 5 sec
+ - Check new blocks once in 500 sec
  - Updating and caching user transactions with the same rate
- - Start from 16110556 block number (can be changed in repository layer)
+ - Start from 16717904 block number (can be changed in repository layer)
  - After subscribing start transaction caching with the latest block num
