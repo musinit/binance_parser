@@ -12,6 +12,8 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 )
 
 // let's start by default not from the beginning of blockchain,
@@ -29,6 +31,7 @@ type MemParserRepository struct {
 	// to remember user tx hashed to avoid repeated txs
 	userAddressTxHash map[string]struct{}
 	latestBlockNumber int32
+	mw                sync.Mutex
 }
 
 func NewMemParserRepository(
@@ -39,14 +42,29 @@ func NewMemParserRepository(
 		"0x0809616c35784db5f758e0338e9d9b25a2fd1932": {},
 		"0x76f36d497b51e48a288f03b4c1d7461e92247d5e": {},
 	}
-	return &MemParserRepository{
+	p := &MemParserRepository{
 		cnf:               config,
 		logger:            logger,
 		transactions:      map[string][]domain.Transaction{},
 		userTransactions:  userTransactions,
 		userAddressTxHash: map[string]struct{}{},
 		latestBlockNumber: startBlockNumber,
+		mw:                sync.Mutex{},
 	}
+	go func(p *MemParserRepository) {
+		for {
+			time.Sleep(60 * time.Second)
+			if p.GetTxNum() > 800000 {
+				p.logger.Writer().Write([]byte("cleaning transactions overhead"))
+				p.mw.Lock()
+				p.transactions = map[string][]domain.Transaction{}
+				p.mw.Unlock()
+			}
+		}
+
+	}(p)
+
+	return p
 }
 
 func (p *MemParserRepository) GetCurrentBlock() int32 {
@@ -108,6 +126,8 @@ func (p *MemParserRepository) CacheTransaction(address string, tx *domain.Transa
 }
 
 func (p *MemParserRepository) AddTransactionsInBlock(blockHash string, txs []domain.Transaction) {
+	p.mw.Lock()
+	defer p.mw.Unlock()
 	p.transactions[blockHash] = append(p.transactions[blockHash], txs...)
 }
 
